@@ -1,0 +1,28 @@
+# Render Blueprint — 경락이(LSB) Web Service (HTTP/Events API 모드)
+# GitHub 저장소 연결 후 Render에서 New → Blueprint 로 이 파일을 읽히면 자동 구성됨.
+# 환경변수(시크릿)는 대시보드 또는 아래 sync:false 항목에 직접 입력.
+services:
+  - type: web
+    name: lsb-gyeongrak
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /
+    envVars:
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SLACK_USER_TOKEN
+        sync: false
+      - key: NOTION_TOKEN
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: LSB_ALLOWED_CHANNELS
+        value: C028C2HTZNZ,C0AJEEUUTFU
+      - key: CLAUDE_MODEL
+        value: claude-sonnet-4-6
