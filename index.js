@@ -52,7 +52,7 @@ async function handle({ event, client, say }) {
   // 로딩 메시지
   let loadingTs = "";
   try {
-    const r = await client.chat.postMessage({ channel: event.channel, thread_ts: threadTs, text: "맥을 짚어보는 중..." });
+    const r = await client.chat.postMessage({ channel: event.channel, thread_ts: threadTs, text: "🫀 맥을 짚어보는 중..." });
     loadingTs = r.ts;
   } catch (_) {}
 
