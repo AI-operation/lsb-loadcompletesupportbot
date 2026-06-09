@@ -1,8 +1,8 @@
 "use strict";
 /**
  * Slack 지식 소스
- *  - 과거 보고/결정 검색: search.messages (SLACK_USER_TOKEN, search:read 필요)
- *  - 없으면 허용 채널의 최근 history를 스캔하는 폴백
+ *  - 과거 전체 검색: search.messages (SLACK_USER_TOKEN, search:read) — 있으면 최우선
+ *  - 없으면: 채널 "전체 히스토리"를 페이지네이션으로 끌어와 캐시 후 검색 (최근만 X)
  *  - 읽기: 스레드 전체를 가져와 맥락 복원
  */
 const { WebClient } = require("@slack/web-api");
@@ -15,12 +15,10 @@ function tsToIso(ts) {
   const n = parseFloat(ts);
   return Number.isNaN(n) ? "" : new Date(n * 1000).toISOString();
 }
-
 function snippet(text, max = 240) {
   if (!text) return "";
   return text.length > max ? text.slice(0, max) + "…" : text;
 }
-
 async function permalink(channel, ts) {
   try {
     const r = await bot.chat.getPermalink({ channel, message_ts: ts });
@@ -30,13 +28,12 @@ async function permalink(channel, ts) {
   }
 }
 
-// 허용 채널로 검색 범위 제한 (in:#channel)
+// ── (1순위) search.messages: 워크스페이스 전체 색인 검색 ──
 function scopedQuery(query) {
   if (!config.allowedChannels.length) return query;
   const scope = config.allowedChannels.map((c) => `in:<#${c}>`).join(" ");
   return `${query} ${scope}`;
 }
-
 async function searchViaApi(query) {
   const res = await userClient.search.messages({
     query: scopedQuery(query),
@@ -44,21 +41,43 @@ async function searchViaApi(query) {
     sort: "score",
   });
   const matches = (res.messages && res.messages.matches) || [];
-  return matches
-    .filter((m) => !config.allowedChannels.length || config.allowedChannels.includes(m.channel && m.channel.id))
-    .map((m) => ({
-      id: `slack:${m.channel && m.channel.id}:${m.ts}`,
-      source: "slack",
-      title: `#${(m.channel && m.channel.name) || ""} · ${m.username || ""}`,
-      snippet: snippet(m.text),
-      url: m.permalink || "",
-      timestamp: tsToIso(m.ts),
-      author: m.username || "",
-      channel: m.channel && m.channel.id,
-    }));
+  return matches.map((m) => ({
+    id: `slack:${m.channel && m.channel.id}:${m.ts}`,
+    source: "slack",
+    title: `#${(m.channel && m.channel.name) || ""} · ${m.username || ""}`,
+    snippet: snippet(m.text),
+    url: m.permalink || "",
+    timestamp: tsToIso(m.ts),
+    author: m.username || "",
+    channel: m.channel && m.channel.id,
+  }));
 }
 
-// 폴백: 최근 메시지 스캔 + 키워드 겹침 점수
+// ── (폴백) 채널 전체 히스토리 적재 + 캐시 ──
+const histCache = new Map(); // channel -> { ts, messages }
+async function fetchChannelAll(channel) {
+  const cached = histCache.get(channel);
+  if (cached && Date.now() - cached.ts < config.historyCacheTtlMs) return cached.messages;
+
+  const all = [];
+  let cursor;
+  while (all.length < config.historyMaxMessages) {
+    let r;
+    try {
+      r = await bot.conversations.history({ channel, limit: 200, cursor });
+    } catch (e) {
+      console.error("[slack.history]", e && e.message);
+      break;
+    }
+    all.push(...(r.messages || []));
+    cursor = r.response_metadata && r.response_metadata.next_cursor;
+    if (!cursor) break;
+  }
+  console.log(`[slack] #${channel} 히스토리 ${all.length}건 적재(캐시)`);
+  histCache.set(channel, { ts: Date.now(), messages: all });
+  return all;
+}
+
 function terms(query) {
   return (query || "")
     .toLowerCase()
@@ -69,15 +88,10 @@ function terms(query) {
 
 async function searchViaHistory(query) {
   const ts = terms(query);
+  if (!ts.length) return [];
   const hits = [];
   for (const channel of config.allowedChannels) {
-    let msgs = [];
-    try {
-      const r = await bot.conversations.history({ channel, limit: 200 });
-      msgs = r.messages || [];
-    } catch {
-      continue;
-    }
+    const msgs = await fetchChannelAll(channel);
     const scored = msgs
       .filter((m) => m.text && !m.bot_id)
       .map((m) => {
@@ -86,7 +100,7 @@ async function searchViaHistory(query) {
         return { m, score };
       })
       .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => b.score - a.score || parseFloat(b.m.ts) - parseFloat(a.m.ts))
       .slice(0, config.maxHitsPerSource);
 
     for (const { m } of scored) {

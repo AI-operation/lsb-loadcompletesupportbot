@@ -36,7 +36,11 @@ const config = {
   driveFolderIds: splitIds(process.env.LSB_DRIVE_FOLDER_IDS || ""), // 비우면 전체 검색
 
   // 검색 결과 상한
-  maxHitsPerSource: Number(process.env.LSB_MAX_HITS || 6),
+  maxHitsPerSource: Number(process.env.LSB_MAX_HITS || 8),
+
+  // 폴백 히스토리 검색: 채널 전체 적재 상한 + 캐시 TTL
+  historyMaxMessages: Number(process.env.LSB_HISTORY_MAX || 3000),
+  historyCacheTtlMs: Number(process.env.LSB_HISTORY_TTL_MS || 600000),
 
   // 권한 태그 (색인/로그에 박아 P5에서 권한모델 A 졸업 대비)
   permissionTag: process.env.LSB_PERMISSION_TAG || "ga-channel-whitelist",
