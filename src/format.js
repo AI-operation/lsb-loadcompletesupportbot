@@ -1,6 +1,6 @@
 "use strict";
 /**
- * 맥락(타임라인) + 출처 정리 + Slack 텍스트 정리 헬퍼.
+ * 맥락(타임라인) + 출처 정리 + Slack 서식 변환 헬퍼.
  */
 
 function fmtDate(iso) {
@@ -35,17 +35,27 @@ function buildSources(hits) {
   return lines.length ? "\n\n*출처*\n" + lines.join("\n") : "";
 }
 
-// Slack 표시용 정리 — 모델이 흘린 마크다운 잔재 제거.
-// Slack은 별표2개 굵게/샵 헤더를 못 읽어 기호가 그대로 보이므로 제거한다.
+/**
+ * GitHub식 마크다운 → Slack mrkdwn 변환.
+ * Slack은 별표2개 굵게/샵 헤더를 못 읽으므로, 제거가 아니라 Slack 문법으로 변환한다.
+ * 코드블록(``` ```) 안은 건드리지 않는다.
+ */
 function toSlackText(text) {
   if (!text) return "";
-  return text
-    .replace(/\*\*(.+?)\*\*/g, "$1")   // 별표2개 굵게 → 마커 제거(내용 유지)
-    .replace(/__(.+?)__/g, "$1")        // 밑줄 강조 제거
-    .replace(/^#{1,6}\s+/gm, "")         // 샵 헤더 마커 제거
-    .replace(/\*\*/g, "")                // 남은 별표2개 제거
-    .replace(/\n{3,}/g, "\n\n")          // 과한 빈 줄 정리
-    .trim();
+  // 코드블록 기준으로 쪼개고 홀수 인덱스(코드블록)는 그대로 둔다.
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  const converted = parts
+    .map((part, i) => {
+      if (i % 2 === 1) return part; // 코드블록 보존
+      let t = part;
+      t = t.replace(/^\s{0,3}#{1,6}\s*(.+)$/gm, "*$1*"); // ## 헤더 → 굵게 줄
+      t = t.replace(/\*\*(.+?)\*\*/g, "*$1*");           // **굵게** → *굵게*
+      t = t.replace(/__(.+?)__/g, "*$1*");               // __굵게__ → *굵게*
+      t = t.replace(/^[\t ]*[-*]\s+/gm, "• ");           // 줄머리 - 또는 * → •
+      return t;
+    })
+    .join("");
+  return converted.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 module.exports = { buildTimeline, buildSources, fmtDate, toSlackText };
