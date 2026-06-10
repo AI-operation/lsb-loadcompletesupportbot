@@ -25,7 +25,9 @@ const config = {
   // ── Anthropic ──
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
   claudeModel: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-  maxAgentLoops: Number(process.env.LSB_MAX_LOOPS || 8),
+  maxAgentLoops: Number(process.env.LSB_MAX_LOOPS || 14),
+  readMaxChars: Number(process.env.LSB_READ_MAX_CHARS || 9000),       // read 1건당 본문 상한
+  totalReadBudget: Number(process.env.LSB_READ_BUDGET || 90000),      // 한 답변에서 읽는 총량 상한(크래시 방지)
   enableWebSearch: process.env.LSB_ENABLE_WEBSEARCH === "1",  // 기본 off (안정화 후 켜기)
 
   // ── Notion (선택) ──

@@ -179,7 +179,9 @@ async function read(ref) {
       const body = await resolveMentions(m.text);
       lines.push(`[${tsToIso(m.ts)}] ${who || m.username || ""}: ${body}`);
     }
-    return { url, text: lines.join("\n") || "(내용 없음)" };
+    let body = lines.join("\n") || "(내용 없음)";
+    if (body.length > config.readMaxChars) body = body.slice(0, config.readMaxChars) + "\n…(이하 생략 — 더 필요하면 기간·주제를 좁혀 다시 물어보세요)";
+    return { url, text: body };
   } catch (e) {
     return { url: "", text: `읽기 실패: ${e && e.message}` };
   }
