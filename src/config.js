@@ -44,6 +44,12 @@ const config = {
   historyMaxMessages: Number(process.env.LSB_HISTORY_MAX || 3000),
   historyCacheTtlMs: Number(process.env.LSB_HISTORY_TTL_MS || 600000),
 
+  // ── 색인(Phase 1): Postgres + Gemini 임베딩 ──
+  databaseUrl: process.env.DATABASE_URL || "",                    // Render Postgres
+  geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
+  embedModel: process.env.LSB_EMBED_MODEL || "gemini-embedding-001",
+  embedDim: Number(process.env.LSB_EMBED_DIM || 1536),
+
   // 권한 태그 (색인/로그에 박아 P5에서 권한모델 A 졸업 대비)
   permissionTag: process.env.LSB_PERMISSION_TAG || "ga-channel-whitelist",
 };
@@ -51,6 +57,7 @@ const config = {
 config.hasNotion = Boolean(config.notionToken);
 config.hasDrive = Boolean(config.googleServiceAccountJson);
 config.hasSlackSearch = Boolean(config.slackUserToken);
+config.hasIndex = Boolean(config.databaseUrl && config.geminiApiKey);
 
 function assertReady() {
   const missing = [];

@@ -9,14 +9,17 @@ const { config } = require("./config");
 const slackSrc = require("./sources/slack");
 const notionSrc = require("./sources/notion");
 const driveSrc = require("./sources/drive");
+const indexSrc = require("./sources/index_search");
 const { buildTimeline } = require("./format");
 
 const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
 
 // ── 통합 검색: 모든 소스 병렬 ──
 async function searchAll(query) {
+  // 색인이 활성이면 Slack은 색인(의미검색)으로, 아니면 라이브 검색으로
+  const slackP = indexSrc.enabled ? indexSrc.search(query) : slackSrc.search(query);
   const [slack, notion, drive] = await Promise.all([
-    slackSrc.search(query),
+    slackP,
     notionSrc.search(query),
     driveSrc.search(query),
   ]);

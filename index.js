@@ -14,6 +14,7 @@ const { config, assertReady } = require("./src/config");
 const { isAllowedChannel, isAllowedUser } = require("./src/guardrails");
 const { buildSources, toSlackText } = require("./src/format");
 const agent = require("./src/agent");
+const store = require("./src/store");
 
 assertReady();
 
@@ -91,6 +92,12 @@ app.event("message", async (args) => {
 
 (async () => {
   await app.start(config.port);
+  if (store.enabled) {
+    try { await store.init(); console.log(`색인: ON (Postgres, ${await store.count()}건)`); }
+    catch (e) { console.error("색인 init 실패:", e && e.message); }
+  } else {
+    console.log("색인: OFF (DATABASE_URL/GEMINI 미설정 → 라이브 검색 사용)");
+  }
   console.log(`경락이(LSB) 가동 (HTTP :${config.port}) — 모델 ${config.claudeModel}`);
   console.log(`허용 채널: ${config.allowedChannels.join(", ") || "(없음)"}`);
   console.log(`허용 사용자: ${config.allowedUsers.join(", ") || "(전체)"}`);

@@ -187,4 +187,4 @@ async function read(ref) {
   }
 }
 
-module.exports = { search, read, bot };
+module.exports = { search, read, bot, userName, resolveMentions };

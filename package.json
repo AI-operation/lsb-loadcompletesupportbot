@@ -1,12 +1,13 @@
 {
   "name": "lsb-gyeongrak",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Gyeongrak-i (LSB, Loadcomplete Support Bot) - GA Slack knowledge agent",
   "private": true,
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "backfill": "node scripts/backfill.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
@@ -14,7 +15,8 @@
     "@slack/bolt": "^3.22.0",
     "@slack/web-api": "^7.0.0",
     "dotenv": "^16.4.5",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "pg": "^8.13.0"
   },
   "engines": {
     "node": ">=18"
