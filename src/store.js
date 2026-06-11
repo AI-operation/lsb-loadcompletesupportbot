@@ -31,12 +31,9 @@ async function maybeMigrateDim() {
   const curDim = r.rows[0].dim;
   if (curDim === config.embedDim) return;
   const c = await pool.query("SELECT COUNT(*)::int AS n FROM lsb_messages");
-  if (c.rows[0].n === 0) {
-    console.log(`[store] 임베딩 차원 변경 ${curDim}→${config.embedDim}, 빈 테이블 재생성`);
-    await pool.query("DROP TABLE lsb_messages");
-  } else {
-    console.error(`[store] 차원 불일치 ${curDim}→${config.embedDim} 인데 ${c.rows[0].n}건 존재 → 수동 확인 필요(색인초기화 명령 사용)`);
-  }
+  // 차원이 다르면 임베딩이 다른 모델 것이라 섞어 쓸 수 없음 → 갈아엎고 재생성
+  console.log(`[store] 임베딩 차원 변경 ${curDim}→${config.embedDim} (기존 ${c.rows[0].n}건은 모델이 달라 사용 불가 → 재생성)`);
+  await pool.query("DROP TABLE lsb_messages");
 }
 
 async function init() {
@@ -117,6 +114,14 @@ async function mentionSearch(personId, limit) {
   return r.rows;
 }
 
+async function reset() {
+  if (!enabled) return 0;
+  const before = await pool.query("SELECT COUNT(*)::int AS n FROM lsb_messages").catch(() => ({ rows: [{ n: 0 }] }));
+  await pool.query("DROP TABLE IF EXISTS lsb_messages");
+  await init();
+  return before.rows[0].n;
+}
+
 async function existingIds() {
   if (!enabled) return new Set();
   const r = await pool.query("SELECT id FROM lsb_messages");
@@ -129,4 +134,4 @@ async function count() {
   return r.rows[0].n;
 }
 
-module.exports = { enabled, init, upsert, vectorSearch, mentionSearch, count, existingIds, toVector };
+module.exports = { enabled, init, reset, upsert, vectorSearch, mentionSearch, count, existingIds, toVector };

@@ -33,6 +33,9 @@ function stripMention(text) {
 function isBackfillCommand(text) {
   return /^(백필|backfill|색인\s*(갱신|재색인)?|reindex)\s*$/i.test((text || "").trim());
 }
+function isResetCommand(text) {
+  return /^(색인\s*초기화|리셋|reset)\s*$/i.test((text || "").trim());
+}
 function isAdmin(userId) {
   // 관리자 목록이 있으면 그 안에서만, 없으면 DM 한정으로 허용(호출부에서 DM 확인)
   if (config.adminUsers.length) return config.adminUsers.includes(userId);
@@ -54,6 +57,23 @@ async function handle({ event, client, say }) {
 
   const question = stripMention(event.text);
   if (!question) return;
+
+  // 관리 명령: 색인 초기화(테이블 비우기) — DM에서 관리자만
+  if (channelType === "im" && isResetCommand(question) && isAdmin(event.user)) {
+    if (!store.enabled) {
+      await say({ text: "색인이 꺼져 있어요(DATABASE_URL/GEMINI 미설정)." }).catch(() => {});
+      return;
+    }
+    try {
+      const removed = await store.reset();
+      console.log(`[reset] 색인 초기화: ${removed}건 삭제`);
+      await say({ text: `🧹 색인을 비웠어요 (${removed}건 삭제). 이제 "백필"을 보내면 처음부터 새로 쌓습니다.` }).catch(() => {});
+    } catch (e) {
+      console.error("[reset] 오류:", (e && e.stack) || e);
+      await say({ text: `색인 초기화 중 오류: ${e && e.message}` }).catch(() => {});
+    }
+    return;
+  }
 
   // 관리 명령: 백필(색인 적재) — DM에서 관리자만
   if (channelType === "im" && isBackfillCommand(question) && isAdmin(event.user)) {
