@@ -15,6 +15,7 @@ const { isAllowedChannel, isAllowedUser } = require("./src/guardrails");
 const { buildSources, toSlackText } = require("./src/format");
 const agent = require("./src/agent");
 const store = require("./src/store");
+const indexer = require("./src/indexer");
 
 assertReady();
 
@@ -27,6 +28,15 @@ const seen = new Set();
 
 function stripMention(text) {
   return (text || "").replace(/<@[^>]+>/g, "").trim();
+}
+
+function isBackfillCommand(text) {
+  return /^(백필|backfill|색인\s*(갱신|재색인)?|reindex)\s*$/i.test((text || "").trim());
+}
+function isAdmin(userId) {
+  // 관리자 목록이 있으면 그 안에서만, 없으면 DM 한정으로 허용(호출부에서 DM 확인)
+  if (config.adminUsers.length) return config.adminUsers.includes(userId);
+  return true;
 }
 
 async function handle({ event, client, say }) {
@@ -44,6 +54,24 @@ async function handle({ event, client, say }) {
 
   const question = stripMention(event.text);
   if (!question) return;
+
+  // 관리 명령: 백필(색인 적재) — DM에서 관리자만
+  if (channelType === "im" && isBackfillCommand(question) && isAdmin(event.user)) {
+    if (!store.enabled) {
+      await say({ text: "색인이 꺼져 있어요(DATABASE_URL/GEMINI 미설정)." }).catch(() => {});
+      return;
+    }
+    if (indexer.isRunning()) {
+      await say({ text: "이미 백필이 진행 중이에요. 끝나면 알려드릴게요." }).catch(() => {});
+      return;
+    }
+    await say({ text: "🫀 색인 백필을 시작했어요. 분량에 따라 몇 분 걸릴 수 있어요. 끝나면 알려드릴게요." }).catch(() => {});
+    indexer
+      .runBackfill()
+      .then((r) => client.chat.postMessage({ channel: event.channel, text: `✅ 백필 완료: 총 색인 ${r.total}건 (이번 ${r.processed}건). 이제 의미검색이 켜졌어요.` }).catch(() => {}))
+      .catch((e) => client.chat.postMessage({ channel: event.channel, text: `백필 중 오류: ${e && e.message}` }).catch(() => {}));
+    return;
+  }
 
   const threadTs = event.thread_ts || event.ts;
 

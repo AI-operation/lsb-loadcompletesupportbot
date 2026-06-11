@@ -21,6 +21,7 @@ const config = {
   allowedChannels: splitIds(process.env.LSB_ALLOWED_CHANNELS || "C028C2HTZNZ,C0AJEEUUTFU"),
   // (선택) 봇 사용을 허용할 사용자 ID. 비우면 전체 허용.
   allowedUsers: splitIds(process.env.LSB_ALLOWED_USERS || ""),
+  adminUsers: splitIds(process.env.LSB_ADMIN_USERS || ""),   // 백필 등 관리 명령 허용(비면 DM 한정 허용)
 
   // ── Anthropic ──
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
