@@ -22,9 +22,27 @@ function toVector(arr) {
   return `[${arr.join(",")}]`;
 }
 
+// 임베딩 차원이 바뀌었는데 테이블이 비어 있으면 안전하게 재생성(모델 교체 대비)
+async function maybeMigrateDim() {
+  const r = await pool.query(
+    "SELECT atttypmod AS dim FROM pg_attribute WHERE attrelid = to_regclass('lsb_messages') AND attname = 'embedding'"
+  );
+  if (!r.rows.length) return; // 테이블 없음 → 곧 새로 생성
+  const curDim = r.rows[0].dim;
+  if (curDim === config.embedDim) return;
+  const c = await pool.query("SELECT COUNT(*)::int AS n FROM lsb_messages");
+  if (c.rows[0].n === 0) {
+    console.log(`[store] 임베딩 차원 변경 ${curDim}→${config.embedDim}, 빈 테이블 재생성`);
+    await pool.query("DROP TABLE lsb_messages");
+  } else {
+    console.error(`[store] 차원 불일치 ${curDim}→${config.embedDim} 인데 ${c.rows[0].n}건 존재 → 수동 확인 필요(색인초기화 명령 사용)`);
+  }
+}
+
 async function init() {
   if (!enabled) return false;
   await pool.query("CREATE EXTENSION IF NOT EXISTS vector");
+  await maybeMigrateDim();
   await pool.query(
     `CREATE TABLE IF NOT EXISTS lsb_messages (
       id text PRIMARY KEY,

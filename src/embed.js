@@ -16,6 +16,14 @@ function l2normalize(v) {
   return v.map((x) => x / n);
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 응답 본문에서 Google이 권하는 재시도 지연(초)을 뽑는다. 없으면 0.
+function retryDelaySec(t) {
+  const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(t || "");
+  return m ? parseFloat(m[1]) : 0;
+}
+
 async function embed(text, taskType) {
   if (!config.geminiApiKey) throw new Error("GEMINI_API_KEY 없음");
   const body = {
@@ -24,19 +32,29 @@ async function embed(text, taskType) {
     taskType: taskType || "RETRIEVAL_DOCUMENT",
     outputDimensionality: config.embedDim,
   };
-  const r = await fetch(endpoint(config.embedModel), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) {
+  const maxRetry = config.embedMaxRetry;
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch(endpoint(config.embedModel), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      const values = j.embedding && j.embedding.values;
+      if (!values || !values.length) throw new Error("embed: 응답에 embedding 없음");
+      return l2normalize(values);
+    }
     const t = await r.text();
+    // 429(쿼터/속도제한)·503(과부하)는 백오프 후 재시도
+    if ((r.status === 429 || r.status === 503) && attempt < maxRetry) {
+      const hinted = retryDelaySec(t);
+      const backoff = hinted ? hinted * 1000 : Math.min(60000, 2000 * 2 ** attempt);
+      await sleep(backoff + Math.random() * 500);
+      continue;
+    }
     throw new Error(`embed ${r.status}: ${t.slice(0, 200)}`);
   }
-  const j = await r.json();
-  const values = j.embedding && j.embedding.values;
-  if (!values || !values.length) throw new Error("embed: 응답에 embedding 없음");
-  return l2normalize(values);
 }
 
 const embedDoc = (t) => embed(t, "RETRIEVAL_DOCUMENT");

@@ -58,6 +58,7 @@ async function indexMessage(channel, m, done) {
   const id = `slack:${channel}:${m.ts}`;
   if (done && done.has(id)) return false; // 이미 색인됨 → 건너뛰기(이어쓰기)
   const body = await resolveMentions(m.text);
+  if (config.embedDelayMs > 0) await sleep(config.embedDelayMs);
   const embedding = await embedDoc(body);
   await store.upsert({
     id,
