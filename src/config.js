@@ -48,8 +48,8 @@ const config = {
   // ── 색인(Phase 1): Postgres + Gemini 임베딩 ──
   databaseUrl: process.env.DATABASE_URL || "",                    // Render Postgres
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
-  embedModel: process.env.LSB_EMBED_MODEL || "text-embedding-004",
-  embedDim: Number(process.env.LSB_EMBED_DIM || 768),
+  embedModel: process.env.LSB_EMBED_MODEL || "gemini-embedding-001",
+  embedDim: Number(process.env.LSB_EMBED_DIM || 1536),
   embedDelayMs: Number(process.env.LSB_EMBED_DELAY_MS || 700),  // 백필 임베딩 간격(분당 한도 회피)
   embedMaxRetry: Number(process.env.LSB_EMBED_MAX_RETRY || 6),  // 429/503 재시도 횟수
 
