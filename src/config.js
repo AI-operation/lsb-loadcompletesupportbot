@@ -50,7 +50,7 @@ const config = {
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
   embedModel: process.env.LSB_EMBED_MODEL || "gemini-embedding-001",
   embedDim: Number(process.env.LSB_EMBED_DIM || 1536),
-  embedDelayMs: Number(process.env.LSB_EMBED_DELAY_MS || 700),  // 백필 임베딩 간격(분당 한도 회피)
+  embedDelayMs: Number(process.env.LSB_EMBED_DELAY_MS ?? 0),  // 백필 임베딩 간격(0=최고속, 유료 한도면 충분). 무료면 700 권장
   embedMaxRetry: Number(process.env.LSB_EMBED_MAX_RETRY || 6),  // 429/503 재시도 횟수
 
   // 권한 태그 (색인/로그에 박아 P5에서 권한모델 A 졸업 대비)
