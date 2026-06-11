@@ -65,11 +65,18 @@ async function handle({ event, client, say }) {
       await say({ text: "이미 백필이 진행 중이에요. 끝나면 알려드릴게요." }).catch(() => {});
       return;
     }
+    console.log("[backfill] 명령 수신 → 시작");
     await say({ text: "🫀 색인 백필을 시작했어요. 분량에 따라 몇 분 걸릴 수 있어요. 끝나면 알려드릴게요." }).catch(() => {});
     indexer
-      .runBackfill()
-      .then((r) => client.chat.postMessage({ channel: event.channel, text: `✅ 백필 완료: 총 색인 ${r.total}건 (이번 ${r.processed}건). 이제 의미검색이 켜졌어요.` }).catch(() => {}))
-      .catch((e) => client.chat.postMessage({ channel: event.channel, text: `백필 중 오류: ${e && e.message}` }).catch(() => {}));
+      .runBackfill((n) => console.log(`[backfill] ...${n}건 처리`))
+      .then((r) => {
+        console.log(`[backfill] 완료: 총 ${r.total}건 (이번 ${r.processed}건)`);
+        client.chat.postMessage({ channel: event.channel, text: `✅ 백필 완료: 총 색인 ${r.total}건 (이번 ${r.processed}건). 이제 의미검색이 켜졌어요.` }).catch(() => {});
+      })
+      .catch((e) => {
+        console.error("[backfill] 오류:", (e && e.stack) || e);
+        client.chat.postMessage({ channel: event.channel, text: `백필 중 오류: ${e && e.message}` }).catch(() => {});
+      });
     return;
   }
 

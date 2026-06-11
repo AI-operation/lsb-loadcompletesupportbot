@@ -99,10 +99,16 @@ async function mentionSearch(personId, limit) {
   return r.rows;
 }
 
+async function existingIds() {
+  if (!enabled) return new Set();
+  const r = await pool.query("SELECT id FROM lsb_messages");
+  return new Set(r.rows.map((x) => x.id));
+}
+
 async function count() {
   if (!enabled) return 0;
   const r = await pool.query("SELECT COUNT(*)::int AS n FROM lsb_messages");
   return r.rows[0].n;
 }
 
-module.exports = { enabled, init, upsert, vectorSearch, mentionSearch, count, toVector };
+module.exports = { enabled, init, upsert, vectorSearch, mentionSearch, count, existingIds, toVector };
