@@ -149,6 +149,12 @@ async function walkBlocks(blockId, textParts, childRefs, state) {
         childRefs.push({ id: b.id, title: t || "(DB)", db: true });
         continue;
       }
+      if (b.type === "link_to_page") {
+        const lp = b.link_to_page || {};
+        const pid = lp.page_id || lp.database_id;
+        if (pid) childRefs.push({ id: pid, title: "(링크된 페이지)", db: !!lp.database_id });
+        continue;
+      }
       const t = blockText(b);
       if (t) textParts.push(t);
       if (b.has_children) await walkBlocks(b.id, textParts, childRefs, state);
@@ -237,6 +243,7 @@ async function findLiteral(word, opts) {
     }
   }
 
+  console.log(`[notion.findLiteral] '${word}' 스캔 ${visited.size}페이지, ${hits.length}곳 발견, calls=${state.calls}, partial=${state.partial}`);
   return { hits, partial: state.partial, scannedPages: visited.size };
 }
 
