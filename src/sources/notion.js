@@ -94,21 +94,22 @@ async function read(ref, maxChars = 4000) {
 
 // ── 완전탐색 헬퍼 ──
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const SCAN_SLEEP = Number(process.env.LSB_NOTION_SCAN_SLEEP || 150);
+const SCAN_MAX_CALLS = Number(process.env.LSB_NOTION_SCAN_CALLS || 700); // API 호출 예산(과다 방지)
 
 function clip(text, needle, pad) {
   const t = text || "";
   const i = t.toLowerCase().indexOf((needle || "").toLowerCase());
-  const p = pad || 60;
-  if (i < 0) return t.slice(0, 120);
+  const p = pad || 70;
+  if (i < 0) return t.slice(0, 140);
   const s = Math.max(0, i - p);
   const e = Math.min(t.length, i + needle.length + p);
   return (s > 0 ? "…" : "") + t.slice(s, e).replace(/\s+/g, " ") + (e < t.length ? "…" : "");
 }
 
-// 페이지 속성(제목/텍스트/선택 등)에서 사람이 읽는 텍스트만 모은다
 function pagePropsText(page) {
   const out = [];
-  for (const pr of Object.values(page.properties || {})) {
+  for (const pr of Object.values((page && page.properties) || {})) {
     if (pr.type === "title") out.push((pr.title || []).map((t) => t.plain_text).join(""));
     else if (pr.type === "rich_text") out.push((pr.rich_text || []).map((t) => t.plain_text).join(""));
     else if (pr.type === "select" && pr.select) out.push(pr.select.name || "");
@@ -121,79 +122,122 @@ function pagePropsText(page) {
   return out.join(" ");
 }
 
-async function fetchPlainText(pageId, maxChars) {
-  const cap = maxChars || 4000;
-  let text = "", cursor;
-  while (true) {
-    const res = await notion.blocks.children.list({ block_id: pageId, page_size: 100, start_cursor: cursor });
-    for (const b of res.results || []) {
-      const t = blockText(b);
-      if (t) text += (text ? "\n" : "") + t;
-      if (text.length >= cap) break;
+// 한 페이지의 본문을 중첩 블록까지 재귀로 모은다.
+// child_page / child_database 는 별도 페이지로 큐에 넣는다(여기선 텍스트로만 제목 포함).
+async function walkBlocks(blockId, textParts, childRefs, state) {
+  let cursor;
+  do {
+    if (state.calls >= state.maxCalls) { state.partial = true; return; }
+    state.calls++;
+    let res;
+    try {
+      res = await notion.blocks.children.list({ block_id: blockId, page_size: 100, start_cursor: cursor });
+    } catch (e) {
+      return;
     }
-    if (!res.has_more || text.length >= cap) break;
-    cursor = res.next_cursor;
-  }
-  return text.slice(0, cap);
+    await sleep(SCAN_SLEEP);
+    for (const b of res.results || []) {
+      if (b.type === "child_page") {
+        const t = (b.child_page && b.child_page.title) || "";
+        if (t) textParts.push(t);
+        childRefs.push({ id: b.id, title: t || "(하위 페이지)" });
+        continue;
+      }
+      if (b.type === "child_database") {
+        const t = (b.child_database && b.child_database.title) || "";
+        if (t) textParts.push(t);
+        childRefs.push({ id: b.id, title: t || "(DB)", db: true });
+        continue;
+      }
+      const t = blockText(b);
+      if (t) textParts.push(t);
+      if (b.has_children) await walkBlocks(b.id, textParts, childRefs, state);
+    }
+    cursor = res.has_more ? res.next_cursor : null;
+  } while (cursor);
 }
 
 /**
- * 완전탐색: 단어가 '글자 그대로' 든 모든 페이지 위치를 빠짐없이 반환.
- *  - 제목/속성은 전 페이지 스캔(추가 호출 없음)
- *  - 본문은 일부 페이지까지 블록 스캔(blockScanCap)
+ * 완전탐색(재귀): 접근 가능한 모든 페이지·하위 페이지·DB 행으로 들어가
+ * 본문(중첩 블록 포함)까지 글자 그대로 스캔. 단어가 든 페이지를 위치로 반환.
  */
 async function findLiteral(word, opts) {
-  if (!notion) return [];
+  if (!notion) return { hits: [], partial: false, scannedPages: 0 };
   const needle = (word || "").toLowerCase();
-  if (!needle) return [];
+  if (!needle) return { hits: [], partial: false, scannedPages: 0 };
   const o = opts || {};
-  const maxPages = o.maxPages || 400;
-  const blockScanCap = o.blockScanCap || 150;
+  const state = { calls: 0, maxCalls: o.maxCalls || SCAN_MAX_CALLS, partial: false };
 
-  const pages = [];
+  const visited = new Set();
+  const queue = [];
+
+  // 1) 접근 가능한 루트(페이지/DB) 수집
   let cursor;
-  while (pages.length < maxPages) {
+  do {
+    if (state.calls >= state.maxCalls) { state.partial = true; break; }
+    state.calls++;
     let res;
     try {
-      res = await notion.search({ filter: { property: "object", value: "page" }, page_size: 100, start_cursor: cursor });
+      res = await notion.search({ page_size: 100, start_cursor: cursor });
     } catch (e) {
-      console.error("[notion.findLiteral.list]", e && e.message);
+      console.error("[notion.findLiteral.search]", e && e.message);
       break;
     }
-    pages.push(...(res.results || []));
-    if (!res.has_more) break;
-    cursor = res.next_cursor;
-    await sleep(350);
-  }
+    await sleep(SCAN_SLEEP);
+    for (const r of res.results || []) {
+      if (r.object === "page") queue.push({ id: r.id, page: r });
+      else if (r.object === "database") queue.push({ id: r.id, db: true });
+    }
+    cursor = res.has_more ? res.next_cursor : null;
+  } while (cursor);
 
   const hits = [];
-  let scanned = 0;
-  for (const pg of pages) {
-    const title = pageTitle(pg);
-    const propText = pagePropsText(pg);
-    let where = null, snip = "";
-    if ((title + " " + propText).toLowerCase().includes(needle)) {
-      where = "제목/속성"; snip = clip(title + " " + propText, word);
-    } else if (scanned < blockScanCap) {
-      scanned++;
-      let body = "";
-      try { body = await fetchPlainText(pg.id, 4000); } catch (e) { body = ""; }
-      await sleep(300);
-      if (body.toLowerCase().includes(needle)) { where = "본문"; snip = clip(body, word); }
+  // 2) 큐 처리 — 페이지는 본문 스캔+하위 발견, DB는 행 조회
+  while (queue.length) {
+    if (state.calls >= state.maxCalls) { state.partial = true; break; }
+    const item = queue.shift();
+    if (visited.has(item.id)) continue;
+    visited.add(item.id);
+
+    if (item.db) {
+      let dcur;
+      do {
+        if (state.calls >= state.maxCalls) { state.partial = true; break; }
+        state.calls++;
+        let qr;
+        try {
+          qr = await notion.databases.query({ database_id: item.id, page_size: 100, start_cursor: dcur });
+        } catch (e) { break; }
+        await sleep(SCAN_SLEEP);
+        for (const row of qr.results || []) if (!visited.has(row.id)) queue.push({ id: row.id, page: row });
+        dcur = qr.has_more ? qr.next_cursor : null;
+      } while (dcur);
+      continue;
     }
-    if (where) {
+
+    const page = item.page;
+    const title = page ? pageTitle(page) : (item.childTitle || "(페이지)");
+    const propText = pagePropsText(page);
+    const textParts = [];
+    const childRefs = [];
+    await walkBlocks(item.id, textParts, childRefs, state);
+    for (const cp of childRefs) if (!visited.has(cp.id)) queue.push({ id: cp.id, db: !!cp.db, childTitle: cp.title });
+
+    const full = `${title} ${propText} ${textParts.join("\n")}`;
+    if (full.toLowerCase().includes(needle)) {
+      const inTitle = `${title} ${propText}`.toLowerCase().includes(needle);
       hits.push({
-        id: `notion:${pg.id}`,
+        id: `notion:${item.id}`,
         source: "notion",
         title,
-        snippet: `(${where}) ${snip}`,
-        url: pg.url || "",
-        timestamp: pg.last_edited_time || "",
+        snippet: `(${inTitle ? "제목/속성" : "본문"}) ${clip(full, word)}`,
+        url: (page && page.url) || `https://www.notion.so/${item.id.replace(/-/g, "")}`,
+        timestamp: (page && page.last_edited_time) || "",
       });
     }
   }
-  const partial = pages.length >= maxPages || scanned >= blockScanCap;
-  return { hits, partial, scannedPages: pages.length };
+
+  return { hits, partial: state.partial, scannedPages: visited.size };
 }
 
 module.exports = { search, read, findLiteral };
