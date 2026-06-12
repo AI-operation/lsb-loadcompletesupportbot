@@ -44,4 +44,34 @@ async function byPerson(personId, limit) {
   }
 }
 
-module.exports = { search, byPerson, enabled: store.enabled };
+// 단어 주변만 잘라 보여주는 스니펫
+function clip(text, needle, pad) {
+  const t = text || "";
+  const i = t.toLowerCase().indexOf((needle || "").toLowerCase());
+  const p = pad || 60;
+  if (i < 0) return t.slice(0, 120);
+  const s = Math.max(0, i - p);
+  const e = Math.min(t.length, i + needle.length + p);
+  return (s > 0 ? "…" : "") + t.slice(s, e).replace(/\s+/g, " ") + (e < t.length ? "…" : "");
+}
+
+// 완전탐색: 본문에 단어가 글자 그대로 든 모든 메시지를 위치로 반환
+async function literal(word) {
+  if (!store.enabled) return [];
+  try {
+    const rows = await store.literalSearch(word, 500);
+    return rows.map((r) => ({
+      id: r.id,
+      source: "slack",
+      title: `#${r.channel} · ${r.author_name || ""}`,
+      snippet: clip(r.body, word),
+      url: r.permalink || "",
+      timestamp: r.created ? new Date(r.created).toISOString() : "",
+    }));
+  } catch (e) {
+    console.error("[index_search.literal]", e && e.message);
+    return [];
+  }
+}
+
+module.exports = { search, byPerson, literal, enabled: store.enabled };

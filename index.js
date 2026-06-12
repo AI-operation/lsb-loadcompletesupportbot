@@ -30,6 +30,36 @@ function stripMention(text) {
   return (text || "").replace(/<@[^>]+>/g, "").trim();
 }
 
+// Slack 메시지 길이 한도 회피: 줄 단위로 안전하게 분할
+const SLACK_CHUNK = 3800;
+const MAX_CHUNKS = 8;
+function chunkText(text, size) {
+  const out = [];
+  let buf = "";
+  for (const lineRaw of (text || "").split("\n")) {
+    let line = lineRaw;
+    while (line.length > size) { // 한 줄이 한도보다 길면 강제로 자름
+      if (buf) { out.push(buf); buf = ""; }
+      out.push(line.slice(0, size));
+      line = line.slice(size);
+    }
+    if ((buf + (buf ? "\n" : "") + line).length > size) { out.push(buf); buf = line; }
+    else buf += (buf ? "\n" : "") + line;
+  }
+  if (buf) out.push(buf);
+  return out.length ? out : [""];
+}
+async function deliver(client, channel, threadTs, loadingTs, text) {
+  let chunks = chunkText(text, SLACK_CHUNK);
+  let trimmed = false;
+  if (chunks.length > MAX_CHUNKS) { chunks = chunks.slice(0, MAX_CHUNKS); trimmed = true; }
+  if (trimmed) chunks[chunks.length - 1] += "\n\n…(결과가 너무 길어 일부만 표시했어요. 범위를 좁혀 다시 물어보세요.)";
+  for (let i = 0; i < chunks.length; i++) {
+    if (i === 0 && loadingTs) await client.chat.update({ channel, ts: loadingTs, text: chunks[0] });
+    else await client.chat.postMessage({ channel, thread_ts: threadTs, text: chunks[i] });
+  }
+}
+
 function isBackfillCommand(text) {
   return /^(백필|backfill|색인\s*(갱신|재색인)?|reindex)\s*$/i.test((text || "").trim());
 }
@@ -123,8 +153,7 @@ async function handle({ event, client, say }) {
     const { answer, hits } = await agent.ask(question, threadContext);
     const finalText = toSlackText(answer) + buildSources(hits);
 
-    if (loadingTs) await client.chat.update({ channel: event.channel, ts: loadingTs, text: finalText });
-    else await say({ text: finalText, thread_ts: threadTs });
+    await deliver(client, event.channel, threadTs, loadingTs, finalText);
     console.log("ANSWERED:", key);
   } catch (e) {
     console.error("handle error:", (e && e.stack) || e);

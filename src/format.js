@@ -58,4 +58,18 @@ function toSlackText(text) {
   return converted.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-module.exports = { buildTimeline, buildSources, fmtDate, toSlackText };
+/** 완전탐색 결과 → "어디에 있는지" 위치 목록 (Slack mrkdwn 링크) */
+function buildLocations(word, hits, note) {
+  if (!hits || !hits.length) return `'${word}' 글자 그대로 든 위치를 찾지 못했어요.`;
+  const CAP = 150;
+  const shown = hits.slice(0, CAP);
+  const lines = shown.map((h, i) => {
+    const link = h.url ? `<${h.url}|${h.title}>` : h.title;
+    return `${i + 1}. [${h.source}] ${link}\n   ${h.snippet || ""}`;
+  });
+  const more = hits.length > CAP ? `\n…외 ${hits.length - CAP}곳 더 있어요. (범위를 좁히면 전부 볼 수 있어요)` : "";
+  const head = `'${word}' 발견 위치 ${hits.length}곳:`;
+  return head + "\n" + lines.join("\n") + more + (note ? `\n\n${note}` : "");
+}
+
+module.exports = { buildTimeline, buildSources, buildLocations, fmtDate, toSlackText };

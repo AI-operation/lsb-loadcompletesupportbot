@@ -128,10 +128,24 @@ async function existingIds() {
   return new Set(r.rows.map((x) => x.id));
 }
 
+// 완전탐색: 본문에 단어가 '글자 그대로' 든 모든 메시지 (빠짐없이, 최신순)
+async function literalSearch(word, limit) {
+  if (!enabled || !word) return [];
+  const r = await pool.query(
+    `SELECT id,channel,ts,author_name,body,permalink,created
+     FROM lsb_messages
+     WHERE body ILIKE $1
+     ORDER BY created DESC
+     LIMIT $2`,
+    [`%${word}%`, limit || 500]
+  );
+  return r.rows;
+}
+
 async function count() {
   if (!enabled) return 0;
   const r = await pool.query("SELECT COUNT(*)::int AS n FROM lsb_messages");
   return r.rows[0].n;
 }
 
-module.exports = { enabled, init, reset, upsert, vectorSearch, mentionSearch, count, existingIds, toVector };
+module.exports = { enabled, init, reset, upsert, vectorSearch, mentionSearch, literalSearch, count, existingIds, toVector };
